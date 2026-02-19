@@ -1,0 +1,2 @@
+# GORM auto-migrate is used in main.go
+# For production Postgres, add SQL migration files here
