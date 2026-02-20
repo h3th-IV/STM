@@ -7,6 +7,7 @@ Production-ready secure task management microservice in Go (Gin) with JWT authen
 - **User authentication**: Registration, login, JWT access + refresh tokens with rotation
 - **RBAC**: User vs admin roles (only admins can force-delete any task)
 - **Task CRUD**: Create, read, update, delete personal tasks
+- **Real-time task notifications**: gRPC server-streaming so clients can subscribe to task create/update/delete events (event-driven, low-latency).
 - **Security**: bcrypt password hashing, rate limiting (auth routes), secure headers, input validation
 - **OWASP mitigations**: Broken auth (JWT + bcrypt), injection (GORM), XSS, etc.
 - **SQLite**: File-based database for easy Docker/local runs
@@ -31,7 +32,7 @@ Production-ready secure task management microservice in Go (Gin) with JWT authen
 
 ```bash
 docker build -t secure-task-go .
-docker run -p 8080:8080 -e JWT_SECRET=your_super_secret_key_change_me secure-task-go
+docker run -p 8080:8080 -p 50051:50051 -e JWT_SECRET=your_super_secret_key_change_me secure-task-go
 ```
 
 Or with docker-compose:
@@ -48,6 +49,9 @@ cp .env.example .env
 go mod download
 go run ./cmd/api
 ```
+
+- **HTTP API**: `http://localhost:8080`
+- **gRPC (notifications)**: `localhost:50051`
 
 ## API Reference
 
@@ -83,6 +87,53 @@ Base URL: `http://localhost:8080/api/v1`
 | Method | Endpoint | Description        |
 |--------|----------|--------------------|
 | GET    | `/health`| Health check       |
+
+## gRPC — Real-time task notifications
+
+Added real-time streaming notifications via gRPC to demonstrate event-driven, low-latency communication. When you create, update, or delete a task via REST, subscribed gRPC clients receive `TaskEvent` messages immediately.
+
+- **Server**: Runs alongside Gin on **port 50051** (Gin stays on 8080).
+- **Auth**: Same JWT as REST — send `authorization: Bearer <access_token>` in gRPC metadata.
+- **RPC**: `NotificationService.SubscribeToTaskUpdates(SubscribeRequest) returns (stream TaskEvent)`.
+
+### Run server (HTTP + gRPC)
+
+```bash
+go run ./cmd/api
+# HTTP: :8080, gRPC: :50051
+```
+
+### Test with the demo client
+
+1. Get a JWT (e.g. login via REST):
+   ```bash
+   curl -s -X POST http://localhost:8080/api/v1/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"email":"user@example.com","password":"password123"}' | jq -r .access_token
+   ```
+2. In one terminal, run the subscriber (use the same `user_id` as the token owner):
+   ```bash
+   go run ./cmd/client -addr=localhost:50051 -user_id=1 -token=<paste_access_token>
+   ```
+3. In another terminal, create a task via REST (same user):
+   ```bash
+   curl -X POST http://localhost:8080/api/v1/tasks \
+     -H "Authorization: Bearer <access_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"title":"New task","description":"Test"}'
+   ```
+   The client terminal should print a `CREATE` event.
+
+### Test with grpcurl (optional)
+
+```bash
+# List services
+grpcurl -plaintext localhost:50051 list
+
+# Subscribe (requires -H "authorization: Bearer <token>" and valid user_id in request)
+grpcurl -plaintext -d '{"user_id":"1"}' -H "authorization: Bearer <YOUR_JWT>" \
+  localhost:50051 task.NotificationService/SubscribeToTaskUpdates
+```
 
 ### Example cURL
 

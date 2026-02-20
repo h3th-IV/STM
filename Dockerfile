@@ -3,6 +3,7 @@ FROM golang:1.22-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
+# Copy proto and generated .pb.go (or run: protoc --go_out=. --go-grpc_out=. proto/task.proto)
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/api
 
@@ -14,5 +15,5 @@ COPY --from=builder /app/main .
 RUN mkdir -p /app/data
 ENV DB_PATH=/app/data/tasks.db
 ENV PORT=8080
-EXPOSE 8080
+EXPOSE 8080 50051
 CMD ["./main"]

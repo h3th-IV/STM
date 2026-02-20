@@ -1,23 +1,31 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
 	"github.com/heth/STM/internal/model"
 	"github.com/heth/STM/internal/repository"
 	"github.com/heth/STM/internal/utils"
+	"github.com/heth/STM/proto"
 	"gorm.io/gorm"
 )
 
 // TaskService handles task business logic.
 type TaskService struct {
-	taskRepo *repository.TaskRepository
+	taskRepo   *repository.TaskRepository
+	taskNotify TaskNotifier // optional: broadcasts task events for real-time subscribers
 }
 
 // NewTaskService creates a new TaskService.
 func NewTaskService(taskRepo *repository.TaskRepository) *TaskService {
 	return &TaskService{taskRepo: taskRepo}
+}
+
+// SetTaskNotifier sets the optional notifier for real-time task events.
+func (s *TaskService) SetTaskNotifier(n TaskNotifier) {
+	s.taskNotify = n
 }
 
 // CreateTaskRequest for creating a task.
@@ -49,6 +57,12 @@ func (s *TaskService) Create(userID uint, req *CreateTaskRequest) (*model.Task, 
 	}
 	if err := s.taskRepo.Create(task); err != nil {
 		return nil, utils.NewAppError(500, "failed to create task", err)
+	}
+	if s.taskNotify != nil {
+		s.taskNotify.BroadcastTaskEvent(uintToStr(task.UserID), &proto.TaskEvent{
+			Type: proto.TaskEvent_CREATE,
+			Task: ModelTaskToProto(task),
+		})
 	}
 	return task, nil
 }
@@ -106,6 +120,12 @@ func (s *TaskService) Update(id uint, userID uint, req *UpdateTaskRequest) (*mod
 	if err := s.taskRepo.Update(task); err != nil {
 		return nil, utils.NewAppError(500, "failed to update task", err)
 	}
+	if s.taskNotify != nil {
+		s.taskNotify.BroadcastTaskEvent(uintToStr(task.UserID), &proto.TaskEvent{
+			Type: proto.TaskEvent_UPDATE,
+			Task: ModelTaskToProto(task),
+		})
+	}
 	return task, nil
 }
 
@@ -121,19 +141,41 @@ func (s *TaskService) Delete(id uint, userID uint, isAdmin bool) error {
 	if task.UserID != userID && !isAdmin {
 		return utils.ErrForbidden
 	}
-	return s.taskRepo.Delete(id)
+	if err := s.taskRepo.Delete(id); err != nil {
+		return err
+	}
+	if s.taskNotify != nil {
+		s.taskNotify.BroadcastTaskEvent(uintToStr(task.UserID), &proto.TaskEvent{
+			Type: proto.TaskEvent_DELETE,
+			Task: ModelTaskToProto(task),
+		})
+	}
+	return nil
 }
 
 // AdminForceDelete permanently deletes any task (admin only).
 func (s *TaskService) AdminForceDelete(id uint) error {
-	_, err := s.taskRepo.GetByID(id)
+	task, err := s.taskRepo.GetByID(id)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return utils.ErrNotFound
 		}
 		return utils.NewAppError(500, "database error", err)
 	}
-	return s.taskRepo.HardDelete(id)
+	if err := s.taskRepo.HardDelete(id); err != nil {
+		return err
+	}
+	if s.taskNotify != nil {
+		s.taskNotify.BroadcastTaskEvent(uintToStr(task.UserID), &proto.TaskEvent{
+			Type: proto.TaskEvent_DELETE,
+			Task: ModelTaskToProto(task),
+		})
+	}
+	return nil
+}
+
+func uintToStr(u uint) string {
+	return fmt.Sprintf("%d", u)
 }
 
 func parseDate(s string) (time.Time, error) {

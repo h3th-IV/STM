@@ -7,7 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/heth/STM/internal/middleware"
 	"github.com/heth/STM/internal/service"
-	"github.com/heth/STM/internal/utils"
 )
 
 // TaskController handles task HTTP handlers.
@@ -30,7 +29,6 @@ func NewTaskController(taskService *service.TaskService) *TaskController {
 // @Router /tasks [get]
 func (c *TaskController) List(ctx *gin.Context) {
 	userID := getUserID(ctx)
-	isAdmin := getIsAdmin(ctx)
 
 	tasks, err := c.taskService.ListByUser(userID)
 	if err != nil {

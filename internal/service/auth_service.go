@@ -170,7 +170,4 @@ func (s *AuthService) issueTokens(user *model.User) (*AuthResponse, error) {
 		ExpiresIn:    expiresIn,
 		User:         user,
 	}, nil
-</think>
-Adding the missing import and fixing ExpiresAt in `auth_service.go`:
-<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>
-StrReplace
+}

@@ -1,0 +1,25 @@
+syntax = "proto3";
+package task;
+option go_package = "github.com/heth/STM/proto";
+
+message Task {
+  string id = 1;
+  string title = 2;
+  string description = 3;
+  string user_id = 4;
+  string status = 5;
+}
+
+message TaskEvent {
+  enum EventType { CREATE = 0; UPDATE = 1; DELETE = 2; }
+  EventType type = 1;
+  Task task = 2;
+}
+
+message SubscribeRequest {
+  string user_id = 1;
+}
+
+service NotificationService {
+  rpc SubscribeToTaskUpdates(SubscribeRequest) returns (stream TaskEvent) {}
+}
